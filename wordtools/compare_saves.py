@@ -13,7 +13,7 @@ from wordtools import cli
 from wordtools.cli import Refusal
 from wordtools.clock import instant, london
 from wordtools.compare import compare_part
-from wordtools.counts import structure_lines
+from wordtools.counts import PLACEHOLDER, TAG_CLOSE, TAG_OPEN, structure_lines
 from wordtools.docx import Docx, DocxError
 from wordtools.manuscript import BODY, ENDNOTES, FOOTNOTES
 from wordtools.pandoc import INSTALL, NoMarkdown, markdown
@@ -31,6 +31,13 @@ def _run(args):
         raise Refusal("with --git give OLDREV [NEWREV] FILE.docx")
     if not args.git and count != 2:
         raise Refusal("give two saves, OLD.docx NEW.docx (or --git OLDREV [NEWREV] FILE.docx)")
+    if not all(text.strip() for text in args.placeholder or ()):
+        raise Refusal("--placeholder needs some text")
+    for flag, word in (("--tag-open", args.tag_open), ("--tag-close", args.tag_close)):
+        if not word.strip():
+            raise Refusal(f"{flag} needs a word")
+    if args.tag_open.lower() == args.tag_close.lower():
+        raise Refusal("--tag-open and --tag-close must differ")
     if not args.no_text_diff and shutil.which("pandoc") is None:
         raise Refusal(
             f"pandoc was not found; the text diff needs it. {INSTALL};"
@@ -69,7 +76,9 @@ def _report(args, scratch):
         print("text diff left out (--no-text-diff)")
     if not args.no_counts:
         print()
-        for line in structure_lines(old, new, utc=args.utc):
+        tags = None if args.no_tags else (args.tag_open, args.tag_close)
+        placeholders = tuple(args.placeholder or (PLACEHOLDER,))
+        for line in structure_lines(old, new, args.utc, placeholders, tags):
             print(line)
     print()
     print("== Paragraph by paragraph")
@@ -169,6 +178,26 @@ def _parser():
     parser.add_argument(
         "--utc", action="store_true", help="show times in UTC instead of London time"
     )
+    parser.add_argument(
+        "--placeholder",
+        action="append",
+        metavar="TEXT",
+        help=f"a text to count in the body and notes (default {PLACEHOLDER}; may be given more"
+        " than once)",
+    )
+    parser.add_argument(
+        "--tag-open",
+        default=TAG_OPEN,
+        metavar="WORD",
+        help=f"the word that opens a bracketed tag (default {TAG_OPEN})",
+    )
+    parser.add_argument(
+        "--tag-close",
+        default=TAG_CLOSE,
+        metavar="WORD",
+        help=f"the word that closes a bracketed tag (default {TAG_CLOSE})",
+    )
+    parser.add_argument("--no-tags", action="store_true", help="leave out the tags line")
     parser.add_argument("--tmp", metavar="DIR", help="where to make the scratch folder")
     parser.add_argument(
         "--timeout",

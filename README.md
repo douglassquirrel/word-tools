@@ -77,6 +77,9 @@ straight quotes: 0 | 0
 links in notes: 0 | 0
 highlighted runs: 0 | 0
 notes of more than one paragraph: none | none
+placeholders: 0 | 0
+headings: Heading1 1, Heading2 2 | Heading1 1, Heading2 2
+tags: none | none
 
 == Paragraph by paragraph
 ===== word/document.xml paragraphs 9 10
@@ -351,12 +354,22 @@ exit code is 1, so the text never carries a guessed ID.
 ### `compare-saves`: two saves of a manuscript
 
     compare-saves OLD.docx NEW.docx [--ignore-font NAME] [--no-text-diff] [--full-diff]
-                  [--no-counts] [--utc] [--tmp DIR] [--timeout SECONDS]
+                  [--no-counts] [--utc] [--placeholder TEXT] [--tag-open WORD]
+                  [--tag-close WORD] [--no-tags] [--tmp DIR] [--timeout SECONDS]
     compare-saves --git OLDREV [NEWREV] FILE.docx [the same options]
 
 The report (shown in full under Quick start) has three sections.
 
 1. **Structure and counts**, old beside new, with the difference where a number changed.
+   Besides the plain counts:
+
+   | Line | Meaning |
+   |---|---|
+   | `highlighted runs: 3 (white 2, yellow 1) \| …` | The count, then each colour, the most common first. A forgotten yellow mark stands out from thousands of harmless white ones. No colours are listed when there are none. |
+   | `placeholders: 0 \| 2 (+2)` | How many times the placeholder text appears in the body, endnotes and footnotes, matched within a paragraph, so across runs but not across a paragraph break. The text is `TKTKTK` unless `--placeholder` says otherwise; given more than one, each has its own line, `placeholders XXX: …`. |
+   | `headings: Title 1, Heading1 2 \| Title 1, Heading1 1` | Paragraphs of the body by the style ids `Title` and `Heading1` to `Heading9`. A style in neither save is left out, one in only one save shows 0 in the other, and no headings at all is `none \| none`. |
+   | `tags: sidebar begin 1 end 1 \| sidebar begin 2 end 1 UNBALANCED` | Bracketed instructions for the typesetter, in the body and notes: `[`, an opening or closing word, a space, a kind, an optional `, variant`, `]`. Case and spaces just inside the brackets do not matter, and `[begin boxed text, centered]` is kind `boxed text`. A kind whose counts differ in the new save is marked `UNBALANCED`. No tags at all is `none \| none`. |
+
 2. **Paragraph by paragraph**, for the body, the endnotes and the footnotes. Paragraphs are
    paired by their text, so one added paragraph does not put the rest out of step.
 
@@ -395,6 +408,9 @@ The exit code is 0 whether or not there are differences: it is a report.
 | `--full-diff` | In section 3, print every changed paragraph and note whole, as `OLD` and `NEW` lines, however long. |
 | `--no-counts` | Leave out section 1. |
 | `--utc` | Show times in UTC. |
+| `--placeholder TEXT` | A text to count. May be given more than once. The default is `TKTKTK`. |
+| `--tag-open WORD`, `--tag-close WORD` | The words that open and close a bracketed tag; the defaults are `begin` and `end`. They must differ. |
+| `--no-tags` | Leave out the `tags` line. |
 | `--tmp DIR` | Where to make the scratch folder (used by `--git`). |
 | `--timeout SECONDS` | How long pandoc or git may take over one call (default 120). |
 
@@ -658,6 +674,10 @@ know. The first version of each command was built on 3 October 2026.
   of the manuscript until submission; `git count-objects -vH`).
 - 1 November 2026: **the four Word commands moved from `book-tools` to this repository, `word-tools`**,
   unchanged; `file-tickets` and `sources-to-text` stay in `book-tools`. Run them from this folder now.
+- 1 November 2026: **`compare-saves` has three new lines in "Structure and counts"**:
+  `placeholders`, `headings` and `tags`, after the existing lines, and `highlighted runs` now
+  gives its colours. New flags `--placeholder`, `--tag-open`, `--tag-close` and `--no-tags`.
+  Anything reading the report line by line should expect them. The exit code is unchanged.
 
 ## Contributing
 

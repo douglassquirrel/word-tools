@@ -3,7 +3,7 @@ import hashlib
 import pytest
 
 from tests.docxkit import pack_docx
-from tests.samples import W, edited_parts, note, sample_parts, separators
+from tests.samples import W, edited_parts, heading, note, p, sample_parts, separators
 from wordtools.counts import counts, structure_lines
 from wordtools.docx import Docx
 
@@ -111,6 +111,9 @@ def test_the_structure_section_sets_the_two_saves_side_by_side(tmp_path):
         "links in notes: 0 | 0",
         "highlighted runs: 0 | 0",
         "notes of more than one paragraph: none | none",
+        "placeholders: 0 | 0",
+        "headings: Heading1 1, Heading2 2 | Heading1 1, Heading2 2",
+        "tags: none | none",
     ]
     assert structure_lines(old, new, utc=True)[3] == (
         "modified (UTC): 2026-10-01 09:00 | 2026-10-02 17:30"
@@ -133,4 +136,96 @@ def test_the_structure_section_names_parts_and_pictures_only_one_save_has(tmp_pa
     ]
     assert lines[6] == "paragraphs: 9 | 1 (-8)"
     assert lines[8] == "trackRevisions: off | on"
-    assert lines[-1] == "notes of more than one paragraph: none | endnote 2"
+    assert lines[-4] == "notes of more than one paragraph: none | endnote 2"
+
+
+def saved(tmp_path, name, body, endnote=None):
+    """A save holding the paragraphs `body`, with `endnote` as its one note's text."""
+    parts = sample_parts(body)
+    if endnote is not None:
+        parts["word/endnotes.xml"] = (
+            f"<w:endnotes {W}>" + separators("endnote") + note("endnote", 1, endnote) + "</w:endnotes>"
+        )
+    return docx(tmp_path, name, parts)[0]
+
+
+def line(tmp_path, start, old, new, **options):
+    """The line of the report for `old` and `new` that begins with `start`."""
+    lines = structure_lines(saved(tmp_path, "old.docx", **old), saved(tmp_path, "new.docx", **new), **options)
+    return next(text for text in lines if text.startswith(start))
+
+
+def test_counts_placeholders_in_body_and_notes_one_split_across_runs(tmp_path):
+    split = "<w:p><w:r><w:t>TKT</w:t></w:r><w:r><w:t>KTK</w:t></w:r></w:p>"
+    new = {"body": [p("one TKTKTK"), split], "endnote": "a TKTKTK"}
+    assert line(tmp_path, "placeholders", {"body": [p("clear")]}, new) == "placeholders: 0 | 3 (+3)"
+
+
+def test_counts_placeholders_in_footnotes(tmp_path):
+    parts = sample_parts([p("clear")])
+    parts["word/footnotes.xml"] = parts["word/footnotes.xml"].replace("Imperial pints.", "TKTKTK")
+    save = docx(tmp_path, "new.docx", parts)[0]
+    old = saved(tmp_path, "old.docx", [p("clear")])
+    assert "placeholders: 0 | 1 (+1)" in structure_lines(old, save)
+
+
+def test_heading_line_shows_a_save_that_lost_a_heading(tmp_path):
+    title = '<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>T</w:t></w:r></w:p>'
+    old = [title, heading(1, "a"), heading(1, "b"), heading(2, "c"), heading(2, "d"), heading(2, "e")]
+    new = old[:-1]
+    assert line(tmp_path, "headings", {"body": old}, {"body": new}) == (
+        "headings: Title 1, Heading1 2, Heading2 3 | Title 1, Heading1 2, Heading2 2"
+    )
+
+
+def test_a_heading_style_in_only_one_save_shows_nought_in_the_other(tmp_path):
+    assert line(tmp_path, "headings", {"body": [heading(3, "a")]}, {"body": [p("b")]}) == (
+        "headings: Heading3 1 | Heading3 0"
+    )
+
+
+def test_no_headings_in_either_save_says_none(tmp_path):
+    assert line(tmp_path, "headings", {"body": [p("a")]}, {"body": [p("b")]}) == "headings: none | none"
+
+
+def test_counts_tags_as_one_kind_and_marks_the_unbalanced_kind_in_the_new_save(tmp_path):
+    new = [p("[begin boxed text]"), p("[ begin boxed text, centered ]"), p("[End Boxed Text]")]
+    assert line(tmp_path, "tags", {"body": [p("a")]}, {"body": new}) == (
+        "tags: boxed text begin 0 end 0 | boxed text begin 2 end 1 UNBALANCED"
+    )
+
+
+def test_marks_only_the_new_save_as_unbalanced(tmp_path):
+    old = [p("[begin sidebar]")]
+    new = [p("[begin sidebar]"), p("[end sidebar]")]
+    assert line(tmp_path, "tags", {"body": old}, {"body": new}) == (
+        "tags: sidebar begin 1 end 0 | sidebar begin 1 end 1"
+    )
+
+
+def test_counts_a_tag_split_across_runs_and_a_tag_in_a_note(tmp_path):
+    split = "<w:p><w:r><w:t>[begin </w:t></w:r><w:r><w:t>sidebar]</w:t></w:r></w:p>"
+    new = {"body": [split], "endnote": "[end sidebar]"}
+    assert line(tmp_path, "tags", {"body": [p("a")]}, new) == (
+        "tags: sidebar begin 0 end 0 | sidebar begin 1 end 1"
+    )
+
+
+def test_no_tags_in_either_save_says_none(tmp_path):
+    assert line(tmp_path, "tags", {"body": [p("a")]}, {"body": [p("b")]}) == "tags: none | none"
+
+
+def highlighted(colour):
+    return f'<w:p><w:r><w:rPr><w:highlight w:val="{colour}"/></w:rPr><w:t>x</w:t></w:r></w:p>'
+
+
+def test_gives_highlighted_runs_by_colour(tmp_path):
+    old = [highlighted("white")]
+    new = [highlighted("white"), highlighted("white"), highlighted("yellow")]
+    assert line(tmp_path, "highlighted", {"body": old}, {"body": new}) == (
+        "highlighted runs: 1 (white 1) | 3 (white 2, yellow 1) (+2)"
+    )
+
+
+def test_no_highlights_gives_no_colour_list(tmp_path):
+    assert line(tmp_path, "highlighted", {"body": [p("a")]}, {"body": [p("b")]}) == "highlighted runs: 0 | 0"

@@ -3,7 +3,7 @@ import hashlib
 import pytest
 
 from tests.docxkit import pack_docx
-from tests.samples import edited_parts, sample_parts
+from tests.samples import edited_parts, p, sample_parts
 from tests.stubs import git_stub, only, pandoc_stub
 from wordtools.compare_saves import main
 
@@ -61,6 +61,9 @@ def structure(saves):
         "links in notes: 0 | 0",
         "highlighted runs: 0 | 0",
         "notes of more than one paragraph: none | none",
+        "placeholders: 0 | 0",
+        "headings: Heading1 1, Heading2 2 | Heading1 1, Heading2 2",
+        "tags: none | none",
     ]
 
 
@@ -261,9 +264,9 @@ def test_git_with_one_revision_compares_it_with_the_file_on_disk(saves, reposito
         f"new: {repository.file} as it is on disk",
         "",
     ]
-    assert out[3:21] == structure(saves)
-    assert out[22:38] == PARAGRAPHS
-    assert out[39:] == WORDS
+    assert out[3:24] == structure(saves)
+    assert out[25:41] == PARAGRAPHS
+    assert out[42:] == WORDS
     folder = str(saves.folder)
     assert saves.git.calls() == [
         ["-C", folder, "show", "HEAD~1:./Book.docx"],
@@ -361,3 +364,63 @@ def test_a_long_paragraph_s_change_is_shown_short_and_full_diff_gives_the_whole_
     ]
     assert saves.run("--help") == 0
     assert "--full-diff" in capsys.readouterr().out
+
+
+def with_marks(saves, old_body=None, new_body=None):
+    for path, body in ((saves.old, old_body), (saves.new, new_body)):
+        if body is not None:
+            pack_docx(path, sample_parts(body))
+
+
+def report_lines(saves, capsys, *flags):
+    capsys.readouterr()
+    assert saves.compare("--no-text-diff", *flags) == 0
+    return capsys.readouterr().out.splitlines()
+
+
+def test_placeholder_flags_give_one_line_each(saves, capsys):
+    with_marks(saves, [p("XXX and TKTKTK")], [p("XXX and XXX")])
+    lines = report_lines(saves, capsys, "--placeholder", "XXX", "--placeholder", "TKTKTK")
+    assert "placeholders XXX: 1 | 2 (+1)" in lines
+    assert "placeholders TKTKTK: 1 | 0 (-1)" in lines
+
+
+def test_tag_words_can_be_chosen(saves, capsys):
+    body = [p("[start sidebar]"), p("[stop sidebar]"), p("[begin sidebar]")]
+    with_marks(saves, body, body)
+    lines = report_lines(saves, capsys, "--tag-open", "start", "--tag-close", "stop")
+    assert "tags: sidebar start 1 stop 1 | sidebar start 1 stop 1" in lines
+
+
+def test_no_tags_leaves_the_line_out(saves, capsys):
+    lines = report_lines(saves, capsys, "--no-tags")
+    assert [line for line in lines if line.startswith("tags")] == []
+
+
+def test_new_counts_are_left_out_with_the_rest_by_no_counts(saves, capsys):
+    lines = report_lines(saves, capsys, "--no-counts")
+    assert [line for line in lines if line.startswith(("placeholders", "headings", "tags"))] == []
+
+
+@pytest.mark.parametrize(
+    "flags, said",
+    [
+        (["--placeholder", ""], "compare-saves: --placeholder needs some text\n"),
+        (["--tag-open", ""], "compare-saves: --tag-open needs a word\n"),
+        (["--tag-close", " "], "compare-saves: --tag-close needs a word\n"),
+        (["--tag-open", "same", "--tag-close", "SAME"], "compare-saves: --tag-open and --tag-close must differ\n"),
+    ],
+)
+def test_refuses_empty_or_matching_words(saves, capsys, flags, said):
+    capsys.readouterr()
+    assert saves.compare("--no-text-diff", *flags) == 2
+    assert capsys.readouterr().err == said
+
+
+def test_a_report_with_the_new_counts_writes_nothing_and_still_exits_0(saves):
+    with_marks(saves, [p("[begin sidebar] TKTKTK")], [p("[begin sidebar] TKTKTK")])
+    before = sorted(saves.folder.iterdir())
+    bytes_before = saves.old.read_bytes(), saves.new.read_bytes()
+    assert saves.compare("--no-text-diff") == 0
+    assert sorted(saves.folder.iterdir()) == before
+    assert (saves.old.read_bytes(), saves.new.read_bytes()) == bytes_before

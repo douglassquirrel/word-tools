@@ -5,7 +5,18 @@ import re
 from datetime import datetime, timezone
 
 from wordtools.clock import london
+from wordtools.content import (
+    HEADINGS,
+    heading_counts,
+    highlight_colours,
+    paragraph_texts,
+    placeholder_count,
+    tag_counts,
+)
+from wordtools.manuscript import BODY, ENDNOTES, FOOTNOTES
 
+PLACEHOLDER = "TKTKTK"
+TAG_OPEN, TAG_CLOSE = "begin", "end"
 TEXT = re.compile(r"<w:t(?: [^>]*)?>([^<]*)</w:t>")
 STRAIGHT = ('"', "'", "&quot;", "&apos;")
 MEDIA = "word/media/"
@@ -59,9 +70,11 @@ def _notes(kind, xml):
     return [(id, inside) for id, inside in found if int(id) > 0]
 
 
-def structure_lines(old, new, utc=False):
-    """The 'Structure and counts' section for two saves."""
+def structure_lines(old, new, utc=False, placeholders=(PLACEHOLDER,), tags=(TAG_OPEN, TAG_CLOSE)):
+    """The 'Structure and counts' section for two saves. `placeholders` are the texts to
+    count; `tags` the opening and closing words of bracketed tags, or None for no tag line."""
     before, after = counts(old), counts(new)
+    was_read, now_read = _read(old), _read(new)
     lines = ["== Structure and counts (old | new)"]
     for name in ("sha256", "revision"):
         lines.append(f"{name}: {before[name]} | {after[name]}")
@@ -72,14 +85,78 @@ def structure_lines(old, new, utc=False):
     lines.extend(_parts(old, new))
     for name in list(before)[3:]:
         was, now = before[name], after[name]
-        if isinstance(was, bool):
+        if name == "highlighted runs":
+            change = f" ({now - was:+d})" if now != was else ""
+            shown = _coloured(was, was_read), _coloured(now, now_read)
+            lines.append(f"{name}: {shown[0]} | {shown[1]}{change}")
+        elif isinstance(was, bool):
             lines.append(f"{name}: {'on' if was else 'off'} | {'on' if now else 'off'}")
         elif isinstance(was, list):
             lines.append(f"{name}: {', '.join(was) or 'none'} | {', '.join(now) or 'none'}")
         else:
             change = f" ({now - was:+d})" if now != was else ""
             lines.append(f"{name}: {was} | {now}{change}")
+    for placeholder in placeholders:
+        label = "placeholders" if len(placeholders) == 1 else f"placeholders {placeholder}"
+        was = placeholder_count(was_read["texts"], placeholder)
+        now = placeholder_count(now_read["texts"], placeholder)
+        change = f" ({now - was:+d})" if now != was else ""
+        lines.append(f"{label}: {was} | {now}{change}")
+    lines.append(_headings(was_read, now_read))
+    if tags:
+        lines.append(_tags(was_read, now_read, *tags))
     return lines
+
+
+def _read(docx):
+    """What the lines beyond the plain counts need from one save."""
+    parts = docx.texts()
+    xml = [parts[name] for name in (BODY, ENDNOTES, FOOTNOTES) if name in parts]
+    return {
+        "body": parts[BODY],
+        "xml": "".join(xml),
+        "texts": [text for part in xml for text in paragraph_texts(part)],
+    }
+
+
+def _coloured(total, read):
+    """A count of highlighted runs, followed by their colours if there are any."""
+    if not total:
+        return "0"
+    colours = ", ".join(f"{colour} {count}" for colour, count in highlight_colours(read["xml"]))
+    return f"{total} ({colours})"
+
+
+def _headings(was_read, now_read):
+    """The headings line. A style in either save is shown on both sides."""
+    was, now = heading_counts(was_read["body"]), heading_counts(now_read["body"])
+    names = [name for name in {**was, **now}]
+    names.sort(key=HEADINGS.index)
+    if not names:
+        return "headings: none | none"
+    old_side = ", ".join(f"{name} {was.get(name, 0)}" for name in names)
+    new_side = ", ".join(f"{name} {now.get(name, 0)}" for name in names)
+    return f"headings: {old_side} | {new_side}"
+
+
+def _tags(was_read, now_read, opening, closing):
+    """The tags line. A kind in either save is shown on both sides; a kind whose counts
+    differ in the new save is marked there."""
+    was = tag_counts(was_read["texts"], opening, closing)
+    now = tag_counts(now_read["texts"], opening, closing)
+    kinds = sorted({*was, *now})
+    if not kinds:
+        return "tags: none | none"
+
+    def side(found, marking):
+        shown = []
+        for kind in kinds:
+            opens, closes = found.get(kind, (0, 0))
+            mark = " UNBALANCED" if marking and opens != closes else ""
+            shown.append(f"{kind} {opening} {opens} {closing} {closes}{mark}")
+        return ", ".join(shown)
+
+    return f"tags: {side(was, False)} | {side(now, True)}"
 
 
 def _when(stamp, utc):
