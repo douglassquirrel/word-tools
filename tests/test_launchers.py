@@ -13,7 +13,7 @@ from tests.samples import SAMPLE_EDITS, sample_parts
 pytestmark = pytest.mark.tier2
 
 KIT = Path(__file__).resolve().parent.parent
-LAUNCHERS = ("propose-edits", "note-map", "compare-saves", "check-spacing")
+LAUNCHERS = ("propose-edits", "note-map", "compare-saves", "check-spacing", "check-tags")
 
 
 @pytest.fixture
@@ -98,4 +98,18 @@ def test_check_spacing_runs_from_another_folder(kit, tmp_path):
     assert (done.returncode, done.stderr) == (1, "")
     assert done.stdout.splitlines()[0] == "== TEXT: 9 paragraphs, 8 double, 1 not double"
     assert [path.name for path in book.iterdir()] == ["in.docx"]
+    assert list(kit.rglob("__pycache__")) == []
+
+
+def test_check_tags_runs_from_another_folder_and_leaves_no_bytecode_anywhere(kit, tmp_path):
+    book = tmp_path / "book"
+    book.mkdir()
+    pack_docx(book / "in.docx", sample_parts())
+    (book / "rules.json").write_text(
+        json.dumps({"open": "begin", "close": "end", "allowed": ["[begin x]"]}), encoding="utf-8"
+    )
+    done = run(kit, "check-tags", "in.docx", "--rules", "rules.json", cwd=book)
+    assert (done.returncode, done.stderr) == (0, "")
+    assert done.stdout.startswith("0 tags in 0 pairs;")
+    assert sorted(path.name for path in book.iterdir()) == ["in.docx", "rules.json"]
     assert list(kit.rglob("__pycache__")) == []

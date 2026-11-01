@@ -1,0 +1,38 @@
+{
+  "open": "begin",
+  "close": "end",
+  "allowed": [
+    "[begin boxed text]",
+    "[begin boxed text, centered]",
+    "[begin boxed text, computer font]",
+    "[end boxed text]",
+    "[begin block quote]",
+    "[end block quote]",
+    "[begin sidebar]",
+    "[end sidebar]"
+  ],
+  "heading_styles": ["Heading2", "Heading3"],
+  "tag_font": "Times New Roman",
+  "default_font": "Times New Roman",
+  "only_inside": {"Courier New": ["boxed text, computer font"]},
+  "kinds": {
+    "boxed text, computer font": {
+      "font": "Courier New",
+      "indent": {"left": 0, "right": 0, "first_line": 0}
+    },
+    "block quote": {
+      "not_fonts": ["Courier New"],
+      "skip_numbered": true,
+      "indent": {"left": 0.5, "right": 0, "first_line": 0}
+    },
+    "sidebar": {"indent": {"left": 0, "right": 0, "first_line": 0.5}}
+  },
+  "skip_boxes_starting": ["In Short"],
+  "box_exceptions": [
+    {"starts_with": "A letter of three parts", "first_line_after_first": 0.5}
+  ],
+  "paragraph_exceptions": [
+    {"starts_with": "Set this one by eye", "skip": true},
+    {"starts_with": "Signed,", "indent": {"left": 3}}
+  ]
+}

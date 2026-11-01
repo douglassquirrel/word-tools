@@ -14,6 +14,7 @@ the two that are not about Word (`file-tickets` and `sources-to-text`).
 | `note-map` | Give every endnote and footnote a permanent ID and keep a map to its current number, so Word can renumber freely and your records never need renumbering; and write a reading text of the manuscript with those IDs in it |
 | `compare-saves` | Say what changed between two saves of a manuscript: structure, words and formatting |
 | `check-spacing` | List the paragraphs that are not at the expected line spacing, following Word's style inheritance |
+| `check-tags` | Check the bracketed instructions for the typesetter against a rules file: their wording, pairing and font, and the fonts and indents of what lies between each pair |
 
 ## Requirements
 
@@ -450,6 +451,118 @@ The exit code is 1 if any paragraph does not match, 0 if all do.
 | `--expect double\|single\|N` | The spacing every paragraph should have: `double` (the default), `single`, or N 240ths of a line (`360` is one and a half). A spacing within 12 of the expected value matches. |
 | `-v`, `--verbose` | List each paragraph that does not match. |
 
+### `check-tags`: bracketed production tags against a rules file
+
+    check-tags MANUSCRIPT.docx --rules RULES.json [-v]
+
+Publishers lay out boxed text, block quotes and sidebars from instructions the author types into
+the manuscript in square brackets, in pairs. This command checks those tags and what lies between
+them. It reads the body of the manuscript and the rules file, and writes nothing. Nothing about
+any one book is built in: the wording, kinds, fonts and indents all come from the rules file.
+
+A **tag** is a paragraph that starts with `[`, an opening or closing word, a space and a kind,
+then an optional `, variant` and `]`. `[begin boxed text, centered]` is kind `boxed text`, variant
+`centered`. A paragraph that starts with a tag and has more text after it is treated as a tag, and
+reported as a wording problem. Boxes are not nested.
+
+    ./check-tags tests/fixtures/sample.docx --rules tests/fixtures/rules.example.json
+
+```
+0 tags in 0 pairs; kinds: none; fonts in the body (paragraph counts): Times New Roman 8, Times-Roman 1; 0 problem(s)
+```
+
+The report is one line per problem, then that summary. Each problem names the heading above and
+the first 35 characters of the box, so it can be found in Word:
+
+```
+Chapter One ("Her letter began as all her letter"): indent left 0.50 right 0.00 first 0.50 (want left 0.50 right 0.00 first 0.00)
+```
+
+| Check | Problem line |
+|---|---|
+| Wording: every tag is exactly one of `allowed`, case and spacing included. | `tag wording "[Begin Sidebar]"` |
+| Pairing: each opening tag is followed by its closing tag before any other opening tag. | `"…" was not closed before the next tag opened`, `"…" closes nothing`, `"…" closes a box opened by "…"`, `"…" is never closed` |
+| Tag font: every non-blank run of a tag line is in `tag_font`. | `tag "…" in … (want …)` |
+| Font in a box: every non-blank run in the rule's `font`, or none in its `not_fonts`. | `font … (want …)`, `font … (not allowed here)` |
+| Indent in a box: as the rule's `indent` says. | `indent left … right … first … (want …)` |
+| Fonts elsewhere: a font in `only_inside` appears only in a box of a kind listed for it. | `… outside a box that allows it` |
+
+The contents of a box that was never closed are not judged. A tag whose wording is wrong is
+reported for that alone: `[begin block-quote]` … `[end block quote]` is one problem, not two.
+
+`-v` also lists every pair, with its kind, heading, first words and number of paragraphs. The exit
+code is 0 with no problems, 1 with any, and 2 for a bad rules file or a manuscript that cannot be
+read, with the reason.
+
+The rules file is JSON. This example is `tests/fixtures/rules.example.json`:
+
+```json
+{
+  "open": "begin",
+  "close": "end",
+  "allowed": [
+    "[begin boxed text]",
+    "[begin boxed text, centered]",
+    "[begin boxed text, computer font]",
+    "[end boxed text]",
+    "[begin block quote]",
+    "[end block quote]",
+    "[begin sidebar]",
+    "[end sidebar]"
+  ],
+  "heading_styles": ["Heading2", "Heading3"],
+  "tag_font": "Times New Roman",
+  "default_font": "Times New Roman",
+  "only_inside": {"Courier New": ["boxed text, computer font"]},
+  "kinds": {
+    "boxed text, computer font": {
+      "font": "Courier New",
+      "indent": {"left": 0, "right": 0, "first_line": 0}
+    },
+    "block quote": {
+      "not_fonts": ["Courier New"],
+      "skip_numbered": true,
+      "indent": {"left": 0.5, "right": 0, "first_line": 0}
+    },
+    "sidebar": {"indent": {"left": 0, "right": 0, "first_line": 0.5}}
+  },
+  "skip_boxes_starting": ["In Short"],
+  "box_exceptions": [
+    {"starts_with": "A letter of three parts", "first_line_after_first": 0.5}
+  ],
+  "paragraph_exceptions": [
+    {"starts_with": "Set this one by eye", "skip": true},
+    {"starts_with": "Signed,", "indent": {"left": 3}}
+  ]
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `open`, `close` | The opening and closing words, matched in any case. Required. |
+| `allowed` | The exact text of every tag allowed. Required. |
+| `heading_styles` | The style ids of the headings used to say where a problem is. |
+| `tag_font` | The font of tag lines. |
+| `default_font` | The font of a run that gets none from itself or its styles. Needed by `tag_font` and `font`. |
+| `only_inside` | For a font, the kinds of box it may appear in. A kind alone covers all its variants. |
+| `kinds` | The rule for each kind, or for a kind and variant, which wins over the kind's own. |
+| `skip_boxes_starting` | A box whose first paragraph with text starts with one of these is not checked at all. |
+| `box_exceptions` | `starts_with`, then any keys of a kind's rule, which replace that key for that one box. |
+| `paragraph_exceptions` | `starts_with`, then `"skip": true` to pass over one paragraph, or `indent` to replace the box's indent for it. |
+
+A kind's rule may have these keys, and only the sides named under `indent` are checked:
+
+| Key | Meaning |
+|---|---|
+| `font` | Every non-blank run is in this font. |
+| `not_fonts` | No non-blank run is in any of these. |
+| `indent` | `left`, `right` and `first_line`, in inches. A hanging indent counts as a negative first line. |
+| `skip_numbered` | Pass over the indent of list paragraphs: numbered, with a hanging indent, or typed with a leading dash or bullet. Their fonts are still checked. |
+| `first_line_after_first` | The first-line indent wanted on the second and later paragraphs of the box. |
+
+Fonts and indents are the ones Word uses: a run's own font, then its character style, its paragraph
+style and what that is based on, then the document's defaults, and `default_font` last.
+
 ## The files the commands write
 
 | Command | Writes | Where |
@@ -490,6 +603,9 @@ What to do about the refusals and failures you are most likely to meet:
 | `… touches an existing tracked insertion` | Accept or reject that change in Word, save, and run again. |
 | `N notes are unclear …` | Add the `--assign` flags the listing shows, one per note. |
 | `verification failed` | A fault in `propose-edits`. No copy was kept; please report it. |
+| `RULES: not valid JSON (line L, column C): …`, `RULES: unknown key "…"`, `RULES: "…" is missing` | `check-tags` could not use the rules file. Put right what the message names. Nothing was checked (exit 2). |
+| `RULES: "default_font" is needed by "tag_font" and "font" …` | Add `default_font` to the rules file, so that a run with no font of its own can be judged. |
+| `FILE: word/document.xml is not well-formed XML` | The manuscript is damaged. Open it in Word and save it again. |
 
 ## Working with a book folder kept in git
 
@@ -614,6 +730,10 @@ read-only on your book folder; write only into a scratch folder.
   split or joined as one changed and one added or removed; among identical paragraphs the
   pairing is by order. An empty paragraph is not counted, and of a paragraph holding a text
   box only the box's own paragraphs are compared.
+- **`check-tags`** reads only tags that start a paragraph; `compare-saves` counts them anywhere, so
+  a tag in the middle of a paragraph shows there and not here. A font named through a theme is not
+  resolved: such a run takes the font of its style. An indent that comes from a list definition is
+  not read, which is what `skip_numbered` is for.
 - **`note-map`** recognises a note by its text and its sentence. Its rule for finding
   sentences is simple and can be fooled by unusual punctuation; what matters is that it
   gives the same answer for the same text at every save.
@@ -678,6 +798,8 @@ know. The first version of each command was built on 3 October 2026.
   `placeholders`, `headings` and `tags`, after the existing lines, and `highlighted runs` now
   gives its colours. New flags `--placeholder`, `--tag-open`, `--tag-close` and `--no-tags`.
   Anything reading the report line by line should expect them. The exit code is unchanged.
+- 1 November 2026: new command `check-tags`, which checks bracketed production tags against a
+  rules file. It reads only.
 
 ## Contributing
 

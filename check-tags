@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""check-tags: check a manuscript's bracketed production tags against a rules file."""
+
+import os
+import sys
+
+# Never write __pycache__, here or anywhere a manuscript is kept.
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from wordtools.check_tags import main  # noqa: E402
+
+sys.exit(main())
