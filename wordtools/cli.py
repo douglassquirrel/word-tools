@@ -2,6 +2,9 @@
 
 import os
 import sys
+from xml.etree import ElementTree
+
+from wordtools.docx import Docx, DocxError
 
 
 class Refusal(Exception):
@@ -36,6 +39,23 @@ def run(name, parser, body, argv, interrupted="interrupted"):
         where = f": {error.filename}" if error.filename else ""
         print(f"{name}: stopped by the system: {said}{where}", file=sys.stderr)
         return 1
+
+
+def open_manuscript(path):
+    """The Docx at `path`, each of its XML parts checked to be well-formed; a Refusal
+    naming the fault if it cannot be read."""
+    try:
+        docx = Docx(path)
+    except DocxError as error:
+        raise Refusal(str(error)) from None
+    except OSError as error:
+        raise Refusal(f"{path}: cannot be read: {error.strerror}") from None
+    for name, xml in docx.texts().items():
+        try:
+            ElementTree.fromstring(xml.encode("utf-8"))
+        except ElementTree.ParseError:
+            raise Refusal(f"{path}: {name} is not well-formed XML") from None
+    return docx
 
 
 def remove(command, path, what, shown=None, folder=False):

@@ -1,11 +1,9 @@
 """check-tags: check a manuscript's bracketed production tags against a rules file."""
 
 import argparse
-from xml.etree import ElementTree
 
 from wordtools import cli
-from wordtools.cli import Refusal
-from wordtools.docx import Docx, DocxError
+from wordtools.cli import Refusal, open_manuscript
 from wordtools.layout import Styles, blocks
 from wordtools.manuscript import BODY, STYLES
 from wordtools.rules import RulesError, load_rules
@@ -19,29 +17,12 @@ def main(argv=None):
     return cli.run("check-tags", _parser(), _run, argv)
 
 
-def read_parts(path):
-    """The parts of the manuscript at `path`, each checked to be well-formed; a Refusal
-    naming the fault if it cannot be read."""
-    try:
-        parts = Docx(path).texts()
-    except DocxError as error:
-        raise Refusal(str(error)) from None
-    except OSError as error:
-        raise Refusal(f"{path}: cannot be read: {error.strerror}") from None
-    for name, xml in parts.items():
-        try:
-            ElementTree.fromstring(xml.encode("utf-8"))
-        except ElementTree.ParseError:
-            raise Refusal(f"{path}: {name} is not well-formed XML") from None
-    return parts
-
-
 def _run(args):
     try:
         rules = load_rules(args.rules)
     except RulesError as error:
         raise Refusal(str(error)) from None
-    parts = read_parts(args.manuscript)
+    parts = open_manuscript(args.manuscript).texts()
     found = blocks(parts[BODY], Styles(parts.get(STYLES, NO_STYLES)), rules["default_font"])
     result = check(found, rules)
     for line in report_lines(result, args.verbose):

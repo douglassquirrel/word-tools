@@ -6,6 +6,7 @@ from wordtools.content import (
     highlight_colours,
     paragraph_texts,
     placeholder_count,
+    reading_texts,
     tag_counts,
 )
 
@@ -146,3 +147,27 @@ def test_counts_highlights_by_colour_most_common_first():
 
 def test_has_no_colours_where_nothing_is_highlighted():
     assert highlight_colours("<w:r><w:t>plain</w:t></w:r>") == []
+
+
+def test_reading_text_shows_a_tab_as_a_space():
+    xml = body("<w:p><w:r><w:t>one</w:t><w:tab/><w:t>two</w:t></w:r></w:p>")
+    assert reading_texts(xml) == ["one two"]
+
+
+def test_reading_text_shows_a_line_break_as_a_new_line():
+    xml = body("<w:p><w:r><w:t>one</w:t><w:br/><w:t>two</w:t></w:r></w:p>")
+    assert reading_texts(xml) == ["one\ntwo"]
+
+
+def test_reading_text_keeps_a_paragraph_with_nothing_to_show():
+    assert reading_texts(body("<w:p/>", "<w:p><w:r><w:t>end</w:t><w:br/></w:r></w:p>")) == ["", "end\n"]
+
+
+def test_reading_text_is_not_thrown_by_an_entity_before_a_break():
+    xml = body("<w:p><w:r><w:t>a &amp; b</w:t><w:tab/><w:t>c</w:t></w:r></w:p>")
+    assert reading_texts(xml) == ["a & b c"]
+
+
+def test_reading_text_ignores_other_things_in_a_run():
+    xml = body('<w:p><w:r><w:t>one</w:t></w:r><w:r><w:endnoteReference w:id="1"/></w:r></w:p>')
+    assert reading_texts(xml) == ["one"]

@@ -133,6 +133,38 @@ def sample_parts(body=None):
     }
 
 
+def ready_parts():
+    """An invented manuscript that passes every check of the sample settings files."""
+    title = '<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>The Lighthouse Ledger</w:t></w:r></w:p>'
+    body = [
+        title,
+        p("List of Tables and Figures"),
+        p("Table 1.1 Oil used by season"),
+        p("Figure 1.1 The lamp room"),
+        p("Dedication"),
+        p("For the keepers."),
+        heading(2, "Chapter 1"),
+        BODY_PARAGRAPHS[2],
+        BODY_PARAGRAPHS[3],
+        p("Table 1.1 Oil used by season"),
+        p("[Figure 1.1]"),
+        p("[The lamp room]"),
+        p("[Credit: The Harbour Archive]"),
+        p("[begin sidebar]"),
+        p("A keeper’s day began at dusk."),
+        p("[end sidebar]"),
+        heading(2, "Chapter 2"),
+        BODY_PARAGRAPHS[8],
+    ]
+    parts = sample_parts(body)
+    parts["word/document.xml"] = parts["word/document.xml"].replace(
+        "<w:sectPr/>",
+        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+        '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>',
+    )
+    return parts
+
+
 def edited_parts():
     """A later save of the sample: a word changed, bold removed from a word, a font name
     dropped, a paragraph's spacing changed, a paragraph added, and a note added before

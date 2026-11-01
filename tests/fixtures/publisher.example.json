@@ -1,0 +1,13 @@
+{
+  "no_links_in_notes": true,
+  "margins_inches": 1,
+  "page_size": "letter",
+  "headers_footers_empty": true,
+  "max_embedded_images": 1,
+  "word_count": [20, 200],
+  "tag_pairs": {
+    "open": "begin",
+    "close": "end",
+    "kinds": ["boxed text", "block quote", "sidebar"]
+  }
+}

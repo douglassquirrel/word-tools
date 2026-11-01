@@ -12,6 +12,7 @@ FALLBACK = re.compile(r"<mc:Fallback\b.*?</mc:Fallback>", re.S)
 OWN_STYLE = re.compile(
     r"<w:p\b[^>]*>\s*<w:pPr\b[^>]*>(?:(?!</w:pPr>).)*?<w:pStyle w:val=\"([^\"]*)\"", re.S
 )
+BREAKS = {"a tab": " ", "a line break": "\n"}
 HEADINGS = ("Title", *(f"Heading{level}" for level in range(1, 10)))
 HIGHLIGHT = re.compile(r'<w:highlight\b[^>]*\bw:val="([^"]*)"')
 
@@ -76,3 +77,21 @@ def highlight_colours(xml):
     """[(colour, number of highlights)] in `xml`, the most common first."""
     colours = Counter(HIGHLIGHT.findall(xml))
     return sorted(colours.items(), key=lambda item: (-item[1], item[0]))
+
+
+def _reading(xml):
+    """A paragraph's text with its tabs and line breaks in it, for counting words and
+    telling lines apart."""
+    paragraph = Paragraph(xml)
+    pieces, last = [], 0
+    for at, what in paragraph.barriers:
+        if what in BREAKS:
+            pieces += [paragraph.text[last:at], BREAKS[what]]
+            last = at
+    return "".join(pieces) + paragraph.text[last:]
+
+
+def reading_texts(xml):
+    """Each paragraph of a part as it reads: a tab is a space and a line break a new line."""
+    xml = FALLBACK.sub("", xml)
+    return [_reading(xml[start:end]) for start, end, _ in paragraph_spans(xml)]

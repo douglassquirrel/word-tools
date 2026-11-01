@@ -1,0 +1,19 @@
+{
+  "notes": 2,
+  "multi_paragraph_notes": 0,
+  "title": "The Lighthouse Ledger",
+  "old_titles": ["The Keeper’s Log"],
+  "counts": [
+    {"name": "chapter headings", "pattern": "(?m)^Chapter \\d", "expect": 2},
+    {"name": "unfilled links", "pattern": "https://XXX", "expect": 0, "placeholder": true}
+  ],
+  "figures": {
+    "callout": "\\[Figure (\\d+\\.\\d+)\\]",
+    "caption": "\\[([^\\]]+)\\]",
+    "credit": "\\[Credit: ([^\\]]*)\\]",
+    "expect": 1,
+    "caption_no_full_stop": true
+  },
+  "tables": ["1.1"],
+  "list_of_figures": {"from": "List of Tables and Figures", "to": "Dedication"}
+}

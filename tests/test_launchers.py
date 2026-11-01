@@ -13,7 +13,9 @@ from tests.samples import SAMPLE_EDITS, sample_parts
 pytestmark = pytest.mark.tier2
 
 KIT = Path(__file__).resolve().parent.parent
-LAUNCHERS = ("propose-edits", "note-map", "compare-saves", "check-spacing", "check-tags")
+LAUNCHERS = (
+    "propose-edits", "note-map", "compare-saves", "check-spacing", "check-tags", "check-manuscript",
+)  # fmt: skip
 
 
 @pytest.fixture
@@ -112,4 +114,15 @@ def test_check_tags_runs_from_another_folder_and_leaves_no_bytecode_anywhere(kit
     assert (done.returncode, done.stderr) == (0, "")
     assert done.stdout.startswith("0 tags in 0 pairs;")
     assert sorted(path.name for path in book.iterdir()) == ["in.docx", "rules.json"]
+    assert list(kit.rglob("__pycache__")) == []
+
+
+def test_check_manuscript_runs_from_another_folder_and_leaves_no_bytecode_anywhere(kit, tmp_path):
+    book = tmp_path / "book"
+    book.mkdir()
+    pack_docx(book / "in.docx", sample_parts())
+    done = run(kit, "check-manuscript", "in.docx", cwd=book)
+    assert (done.returncode, done.stderr) == (0, "")
+    assert done.stdout.splitlines()[-1] == "RESULT: PASS"
+    assert sorted(path.name for path in book.iterdir()) == ["in.docx"]
     assert list(kit.rglob("__pycache__")) == []

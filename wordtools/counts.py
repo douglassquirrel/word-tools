@@ -79,9 +79,8 @@ def structure_lines(old, new, utc=False, placeholders=(PLACEHOLDER,), tags=(TAG_
     for name in ("sha256", "revision"):
         lines.append(f"{name}: {before[name]} | {after[name]}")
     zone = "UTC" if utc else "London time"
-    lines.append(
-        f"modified ({zone}): {_when(before['modified'], utc)} | {_when(after['modified'], utc)}"
-    )
+    times = shown_time(before["modified"], utc), shown_time(after["modified"], utc)
+    lines.append(f"modified ({zone}): {times[0]} | {times[1]}")
     lines.extend(_parts(old, new))
     for name in list(before)[3:]:
         was, now = before[name], after[name]
@@ -159,7 +158,7 @@ def _tags(was_read, now_read, opening, closing):
     return f"tags: {side(was, False)} | {side(now, True)}"
 
 
-def _when(stamp, utc):
+def shown_time(stamp, utc):
     """A time from core.xml (UTC) as it is to be shown."""
     try:
         moment = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)

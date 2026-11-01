@@ -3,9 +3,9 @@
 A small kit of command-line programs for an author writing a book in Microsoft Word, with an
 AI assistant doing the checking and record-keeping. It is not tied to any one book or
 publisher. Each command does one job, takes every path as an argument, and never writes over
-the file it was given: the manuscript is only ever read. Until 1 November 2026 these four
-commands were part of [book-tools](https://github.com/douglassquirrel/book-tools), which keeps
-the two that are not about Word (`file-tickets` and `sources-to-text`).
+the file it was given: the manuscript is only ever read. Until 1 November 2026 the first four
+commands below were part of [book-tools](https://github.com/douglassquirrel/book-tools), which
+keeps the two that are not about Word (`file-tickets` and `sources-to-text`).
 
 | Command | Job |
 |---|---|
@@ -15,6 +15,7 @@ the two that are not about Word (`file-tickets` and `sources-to-text`).
 | `compare-saves` | Say what changed between two saves of a manuscript: structure, words and formatting |
 | `check-spacing` | List the paragraphs that are not at the expected line spacing, following Word's style inheritance |
 | `check-tags` | Check the bracketed instructions for the typesetter against a rules file: their wording, pairing and font, and the fonts and indents of what lies between each pair |
+| `check-manuscript` | Check a whole manuscript before it goes to a publisher, against the rules every manuscript shares and the settings of a publisher and a book |
 
 ## Requirements
 
@@ -474,8 +475,11 @@ reported as a wording problem. Boxes are not nested.
 The report is one line per problem, then that summary. Each problem names the heading above and
 the first 35 characters of the box, so it can be found in Word:
 
+    ./check-tags tests/fixtures/ready.docx --rules tests/fixtures/rules.example.json
+
 ```
-Chapter One ("Her letter began as all her letter"): indent left 0.50 right 0.00 first 0.50 (want left 0.50 right 0.00 first 0.00)
+Chapter 1 ("A keeper’s day began at dusk."): indent left 0.00 right 0.00 first 0.00 (want left 0.00 right 0.00 first 0.50)
+2 tags in 1 pairs; kinds: sidebar 1; fonts in the body (paragraph counts): Times New Roman 18; 1 problem(s)
 ```
 
 | Check | Problem line |
@@ -563,6 +567,114 @@ A kind's rule may have these keys, and only the sides named under `indent` are c
 Fonts and indents are the ones Word uses: a run's own font, then its character style, its paragraph
 style and what that is based on, then the document's defaults, and `default_font` last.
 
+### `check-manuscript`: a whole-file check before a manuscript goes to a publisher
+
+    check-manuscript MANUSCRIPT.docx [--settings FILE ...] [--expect-notes N]
+                     [--allow-placeholders] [-q]
+
+It reads the manuscript and the settings files, and writes nothing. The first line gives the file,
+its size, its SHA-256 (16 characters), its revision and when it was saved. Then there is one line
+per check, `OK`, `FAIL` or `NOTE`, with the numbers found. A `NOTE` never fails the run. The last
+line is `RESULT: PASS` or `RESULT: N FAIL(S): …`, listing them. The exit code is 0 on a pass, 1 on
+any FAIL, and 2 for a bad settings file or a manuscript that cannot be read, with the reason.
+
+    ./check-manuscript tests/fixtures/ready.docx -q --settings tests/fixtures/publisher.example.json --settings tests/fixtures/book.example.json
+
+```
+NOTE fonts used in runs: none set directly
+NOTE highlighted runs: 0
+NOTE explicit line spacing other than 480: 0
+NOTE paragraphs by heading style: Title 1, Heading2 2
+RESULT: PASS
+```
+
+| Flag | Meaning |
+|---|---|
+| `--settings FILE` | A JSON settings file. May be given more than once, and later files win key by key, so a publisher's rules can be kept apart from a book's facts and reused for the next book. A key set to `null` in a later file switches that check off. |
+| `--expect-notes N` | Check that there are N endnotes. Wins over the setting `notes`. |
+| `--allow-placeholders` | For an early check when some are known to be outstanding. Placeholders, unfilled figure credit lines and `counts` entries marked `"placeholder": true` become NOTEs. |
+| `-q` | Print only the FAIL and NOTE lines and the result. |
+
+**Always checked, whatever the settings:**
+
+- No tracked changes in the body, endnotes or footnotes, and Track Changes off.
+- No comments: no comments part and no comment references.
+- Every endnote has exactly one marker and every marker a note, and the same for footnotes.
+- No straight quotes or apostrophes in the body or notes.
+- No zero-width spaces, soft hyphens, zero-width non-joiners or byte-order marks.
+- No placeholders: `TKTKTK`, or those in the setting `placeholders`.
+- No fields in headers and footers, such as page numbers, and no watermark.
+- As NOTEs: the fonts used in runs, highlighted runs by colour, explicit line spacing other than
+  expected, notes of more than one paragraph, and paragraphs by heading style.
+
+**Switched on by a setting.** A setting left out switches its check off.
+
+| Setting | Check |
+|---|---|
+| `notes` | The number of endnotes. |
+| `multi_paragraph_notes` | The number of notes of more than one paragraph; a NOTE if different. |
+| `no_links_in_notes` | With `true`: no live hyperlinks in the notes. |
+| `margins_inches` | Every section's top, bottom, left and right margin, as one number. |
+| `page_size` | `"letter"`, `"a4"` or `[width, height]` in inches, in every section. |
+| `headers_footers_empty` | With `true`: headers and footers have no text. With `"note"`: the same, as a NOTE. |
+| `max_embedded_images` | At most this many files in `word/media/`; a NOTE naming them if there are more. |
+| `word_count` | `[lowest, highest]`: words in the body plus notes, counted paragraph by paragraph. |
+| `title` | This text appears in the first 3,000 characters of the body. |
+| `old_titles` | None of these texts appears anywhere in the body or notes. |
+| `placeholders` | The placeholder texts, in place of `TKTKTK`. |
+| `line_spacing` | The spacing the NOTE compares with, in 240ths of a line; 480, double, if left out. `check-spacing` is the full check. |
+| `tag_pairs` | `open`, `close`, `kinds`, and optionally `required`: each kind's opening and closing tags balance, and each required kind occurs. `check-tags` checks the rest. |
+| `counts` | A list of `name`, `pattern`, and `expect`, `min` or `max`: the number of matches in the text of the body. `"placeholder": true` lets `--allow-placeholders` soften it. |
+| `figures` | `callout`, `caption` and `credit`, and optionally `expect` and `caption_no_full_stop`: each figure is a callout line, a caption line and a credit line in that order, and every credit line is filled. Empty lines between them do not matter. |
+| `tables` | Table numbers that must each be named as `Table 1.1` in the body. |
+| `list_of_figures` | `from` and `to`, two whole paragraphs: the text between them names every figure. An entry reads `Figure {number} {caption}` unless `entry` says otherwise, and a number at the end of a caption is ignored. Needs `figures`. |
+
+Patterns are Python regular expressions, matched against the text as Word shows it: runs joined, a
+new line between paragraphs, note markers not text. From a `figures` pattern, the first group is the
+figure's number, caption or credit, or all that matched if it has no group.
+
+This sample publisher's file is `tests/fixtures/publisher.example.json`:
+
+```json
+{
+  "no_links_in_notes": true,
+  "margins_inches": 1,
+  "page_size": "letter",
+  "headers_footers_empty": true,
+  "max_embedded_images": 1,
+  "word_count": [20, 200],
+  "tag_pairs": {
+    "open": "begin",
+    "close": "end",
+    "kinds": ["boxed text", "block quote", "sidebar"]
+  }
+}
+```
+
+This sample book's file is `tests/fixtures/book.example.json`:
+
+```json
+{
+  "notes": 2,
+  "multi_paragraph_notes": 0,
+  "title": "The Lighthouse Ledger",
+  "old_titles": ["The Keeper’s Log"],
+  "counts": [
+    {"name": "chapter headings", "pattern": "(?m)^Chapter \\d", "expect": 2},
+    {"name": "unfilled links", "pattern": "https://XXX", "expect": 0, "placeholder": true}
+  ],
+  "figures": {
+    "callout": "\\[Figure (\\d+\\.\\d+)\\]",
+    "caption": "\\[([^\\]]+)\\]",
+    "credit": "\\[Credit: ([^\\]]*)\\]",
+    "expect": 1,
+    "caption_no_full_stop": true
+  },
+  "tables": ["1.1"],
+  "list_of_figures": {"from": "List of Tables and Figures", "to": "Dedication"}
+}
+```
+
 ## The files the commands write
 
 | Command | Writes | Where |
@@ -582,7 +694,7 @@ interrupted. No command writes anything beside its input, and none leaves a `__p
 |---|---|
 | 0 | Complete success, including nothing to do. `compare-saves` exits 0 whether or not the saves differ. |
 | 1 | The run happened and found a problem: an edit could not be placed, a check failed, a ticket failed, a note is unclear, a paragraph is not at the expected spacing, a source could not be converted, a save could not be read, the system refused the command a file. |
-| 2 | The command refused to start: a bad flag, a missing program, a missing or faulty input, an output that exists. Nothing was done. |
+| 2 | The command refused to start: a bad flag, a missing program, a missing or faulty input, an output that exists. Nothing was done. For `check-tags` and `check-manuscript` this includes a manuscript that cannot be read. |
 | 130 | Interrupted (Ctrl-C). Nothing half-written is left behind, unless the system forbids removing it, which the command then says. |
 
 What to do about the refusals and failures you are most likely to meet:
@@ -606,6 +718,8 @@ What to do about the refusals and failures you are most likely to meet:
 | `RULES: not valid JSON (line L, column C): …`, `RULES: unknown key "…"`, `RULES: "…" is missing` | `check-tags` could not use the rules file. Put right what the message names. Nothing was checked (exit 2). |
 | `RULES: "default_font" is needed by "tag_font" and "font" …` | Add `default_font` to the rules file, so that a run with no font of its own can be judged. |
 | `FILE: word/document.xml is not well-formed XML` | The manuscript is damaged. Open it in Word and save it again. |
+| `SETTINGS: unknown key "…"`, `SETTINGS: counts "…": "pattern" is a bad regular expression: …` | `check-manuscript` could not use the settings file. Put right what the message names. Nothing was checked (exit 2). |
+| `the settings give "list_of_figures" but not "figures", which it needs` | Add `figures` to one of the settings files. |
 
 ## Working with a book folder kept in git
 
@@ -697,8 +811,8 @@ small stand-in program on a `PATH` of its own, which records what it was given a
 told to fail. Every document in the tests is invented and built by the tests themselves; no
 real manuscript, source or ticket is in this repository.
 
-Coverage of `wordtools/` is 99% (statements and branches; 304 tests); the one statement not
-run is a defensive branch in `xmlscan`, as it was in `book-tools`.
+Coverage of `wordtools/` is 99% (statements and branches; 675 tests); the one statement shown
+as not run is in `sentences`, as it was in `book-tools`.
 
 `.venv/bin/pytest -m tier1` runs the tests of pure functions alone, and `-m tier2` the tests
 of whole commands.
@@ -714,6 +828,10 @@ read-only on your book folder; write only into a scratch folder.
 4. `note-map` over three consecutive saves with the registry in a scratch folder: every ID
    carried, none unclear. With `--extract`, read the text: each ID stands at the marker and
    the note you expect.
+5. `check-tags` with your rules file on the manuscript: the pairs and kinds you expect, and any
+   problem it reports is one you can find in Word.
+6. `check-manuscript` with your settings on the manuscript: the numbers you expect, and a passing
+   run when you know the file is ready.
 
 ## Known limitations
 
@@ -734,6 +852,10 @@ read-only on your book folder; write only into a scratch folder.
   a tag in the middle of a paragraph shows there and not here. A font named through a theme is not
   resolved: such a run takes the font of its style. An indent that comes from a list definition is
   not read, which is what `skip_numbered` is for.
+- **`check-manuscript`** counts each word it can see, so its word count differs a little from Word's,
+  and text boxes are counted once. `word_count` is a range for this reason. A watermark is
+  recognised by the name Word gives it. A field in a header is found only in the two forms Word
+  writes, a complicated field and a simple one.
 - **`note-map`** recognises a note by its text and its sentence. Its rule for finding
   sentences is simple and can be fooled by unusual punctuation; what matters is that it
   gives the same answer for the same text at every save.
@@ -743,7 +865,7 @@ read-only on your book folder; write only into a scratch folder.
   text. A literal `[^7]` typed in the manuscript is safe: pandoc writes it with backslashes.
 
 **Deliberately not part of the kit:** packaging a submission, review copies, art decks,
-any one publisher's rules, a manuscript-wide "is it ready" check, a graphical interface,
+any one publisher's rules in the code (they belong in a settings file), a graphical interface,
 network access, calls to an AI model, and any editing of a manuscript in place.
 
 ## Notes for users
@@ -800,6 +922,10 @@ know. The first version of each command was built on 3 October 2026.
   Anything reading the report line by line should expect them. The exit code is unchanged.
 - 1 November 2026: new command `check-tags`, which checks bracketed production tags against a
   rules file. It reads only.
+- 1 November 2026: new command `check-manuscript`, a whole-file check against shared rules and the
+  settings of a publisher and a book. It reads only. A manuscript-wide check is no longer listed
+  as outside the kit. Its word count is made paragraph by paragraph, so it can be higher than a
+  count that runs paragraphs together.
 
 ## Contributing
 
